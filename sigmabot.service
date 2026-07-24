@@ -1,0 +1,15 @@
+[Unit]
+Description=SigmaBot Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=sigmabot
+WorkingDirectory=/opt/sigmabot
+Environment="PATH=/opt/sigmabot/.venv/bin"
+ExecStart=/opt/sigmabot/.venv/bin/python bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,110 @@
+import time
+import discord
+from discord.ext import commands
+
+
+class CloseButton(discord.ui.View):
+    def __init__(self, bot, channel_id):
+        super().__init__()
+        self.bot = bot
+        self.channel_id = channel_id
+
+    @discord.ui.button(label='Ticket schließen', style=discord.ButtonStyle.red, emoji='🔒')
+    async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        await self.bot.db.execute('UPDATE tickets SET status = ? WHERE channel_id = ?', ('closed', self.channel_id))
+        await self.bot.db.commit()
+        await interaction.followup.send('Ticket wird geschlossen...', ephemeral=False)
+        await interaction.channel.delete()
+
+
+class Tickets(commands.Cog):
+    """Ticket-System mit Embeds und Close-Buttons."""
+    
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
+    @commands.command()
+    async def ticket(self, ctx, *, reason: str = 'Support benötigt'):
+        """Erstellt ein Support-Ticket."""
+        guild = ctx.guild
+        mod_role = discord.utils.get(guild.roles, name='Moderator')
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            ctx.author: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            guild.me: discord.PermissionOverwrite(read_messages=True)
+        }
+        if mod_role:
+            overwrites[mod_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        
+        category = discord.utils.get(guild.categories, name='Tickets')
+        if not category:
+            category = await guild.create_category('Tickets')
+        
+        chan = await guild.create_text_channel(f'ticket-{ctx.author.name}', overwrites=overwrites, category=category)
+        ts = int(time.time())
+        await self.bot.db.execute('INSERT INTO tickets (guild_id, channel_id, user_id, status, created_at) VALUES (?, ?, ?, ?, ?)', (guild.id, chan.id, ctx.author.id, 'open', ts))
+        await self.bot.db.commit()
+        
+        # Embed für Ticket-Infos
+        embed = discord.Embed(
+            title='📋 Ticket erstellt',
+            description=f'Benutzer: {ctx.author.mention}\nGrund: {reason}',
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name='Status', value='🟢 Offen', inline=True)
+        embed.add_field(name='Erstellt', value=f'<t:{ts}:R>', inline=True)
+        embed.set_footer(text=f'Ticket ID: {chan.id}')
+        
+        view = CloseButton(self.bot, chan.id)
+        await chan.send(embed=embed, view=view)
+        await ctx.send(f'✅ Ticket erstellt: {chan.mention}', delete_after=10)
+
+    @commands.command()
+    @commands.has_permissions(manage_channels=True)
+    async def ticketinfo(self, ctx, channel: discord.TextChannel = None):
+        """Zeigt Ticket-Informationen."""
+        channel = channel or ctx.channel
+        cur = await self.bot.db.execute('SELECT user_id, status, created_at FROM tickets WHERE channel_id = ?', (channel.id,))
+        row = await cur.fetchone()
+        
+        if not row:
+            await ctx.send('Das ist kein Ticket-Channel.')
+            return
+        
+        user_id, status, created_at = row
+        user = await self.bot.fetch_user(user_id)
+        
+        embed = discord.Embed(
+            title='📋 Ticket-Informationen',
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name='Ersteller', value=f'{user.mention}', inline=True)
+        embed.add_field(name='Status', value=status.upper(), inline=True)
+        embed.add_field(name='Erstellt', value=f'<t:{created_at}:R>', inline=False)
+        embed.set_footer(text=f'Channel ID: {channel.id}')
+        
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    @commands.has_permissions(manage_channels=True)
+    async def close(self, ctx, channel: discord.TextChannel = None):
+        """Schließt ein Ticket manuell."""
+        channel = channel or ctx.channel
+        await self.bot.db.execute('UPDATE tickets SET status = ? WHERE channel_id = ?', ('closed', channel.id))
+        await self.bot.db.commit()
+        
+        embed = discord.Embed(
+            title='🔒 Ticket geschlossen',
+            description=f'Von: {ctx.author.mention}',
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        await channel.send(embed=embed)
+        await channel.delete(delay=3)
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(Tickets(bot))

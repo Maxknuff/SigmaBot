@@ -1,0 +1,20 @@
+version: '3.9'
+
+services:
+  sigmabot:
+    build: .
+    container_name: sigmabot
+    restart: unless-stopped
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      DATABASE_PATH: /app/data/data.db
+      VPN_API_KEY: ${VPN_API_KEY:-}
+      URL_SCAN_API_KEY: ${URL_SCAN_API_KEY:-}
+    volumes:
+      - ./data:/app/data
+    networks:
+      - sigma_network
+
+networks:
+  sigma_network:
+    driver: bridge

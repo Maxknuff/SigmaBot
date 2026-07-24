@@ -1,0 +1,10 @@
+discord.py>=2.3.0
+aiosqlite
+python-dotenv
+aiohttp
+
+# Testing & Linting
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+flake8>=5.0.0
+black>=23.0.0
