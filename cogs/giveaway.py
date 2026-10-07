@@ -1,7 +1,9 @@
 import time
 import random
+import re
 import discord
 from discord.ext import commands, tasks
+from cogs.utils import bounded_text, positive_seconds
 
 
 class JoinButton(discord.ui.View):
@@ -9,152 +11,156 @@ class JoinButton(discord.ui.View):
         super().__init__(timeout=None)
         self.bot = bot
         self.giveaway_id = giveaway_id
+        self.children[0].custom_id = f"giveaway:join:{giveaway_id}"
 
-    @discord.ui.button(label='Teilnehmen', style=discord.ButtonStyle.green, emoji='🎉')
+    @discord.ui.button(label="Teilnehmen", style=discord.ButtonStyle.green, emoji="🎉", custom_id="giveaway:join")
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Nutzer-ID speichern (einfache in-memory Liste für Demo; könnte auch DB sein)
-        # Hier verwenden wir nur die Nachricht selbst
         await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send('✅ Du nimmst am Giveaway teil!', ephemeral=True)
+        async with self.bot.db_lock:
+            cur = await self.bot.db.execute(
+                "INSERT OR IGNORE INTO giveaway_entries (message_id, user_id) "
+                "SELECT message_id, ? FROM giveaways WHERE id = ? AND guild_id = ? AND active = 1 AND ends_at > ?",
+                (interaction.user.id, self.giveaway_id, interaction.guild_id, int(time.time())),
+            )
+            await self.bot.db.commit()
+            if cur.rowcount:
+                text = "✅ Du nimmst am Giveaway teil!"
+            else:
+                text = "Du nimmst bereits teil oder das Giveaway ist beendet."
+        await interaction.followup.send(text, ephemeral=True)
 
 
 class Giveaway(commands.Cog):
-    """Giveaway-System mit Embeds und Button-UI."""
-    
+    """Giveaway-System mit persistenten Teilnehmern und Button-UI."""
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.giveaway_participants = {}  # msg_id -> set(user_ids)
         self.check_giveaways.start()
+
+    async def cog_load(self):
+        cur = await self.bot.db.execute("SELECT id, message_id FROM giveaways WHERE active = 1")
+        for gid, message_id in await cur.fetchall():
+            self.bot.add_view(JoinButton(self.bot, gid), message_id=message_id)
 
     def cog_unload(self):
         self.check_giveaways.cancel()
 
     @commands.command()
     @commands.has_permissions(manage_guild=True)
-    async def giveaway(self, ctx, seconds: int, winners: int = 1, *, prize: str = 'Preis'):
-        """Startet ein Giveaway mit angegebenem Zeitlimit und Gewinneranzahl."""
+    @commands.bot_has_permissions(embed_links=True, read_message_history=True)
+    async def giveaway(self, ctx, seconds: int, winners: int = 1, *, prize: str = "Preis"):
+        positive_seconds(seconds)
+        bounded_text(prize, 500)
+        if not 1 <= winners <= 100:
+            raise commands.BadArgument("Die Gewinneranzahl muss zwischen 1 und 100 liegen.")
         ends = int(time.time()) + seconds
-        
-        # Embed für Giveaway
         embed = discord.Embed(
-            title='🎉 GIVEAWAY 🎉',
-            description=f'**Preis:** {prize}\n\n**Gewinner:** {winners}\n**Endet:** <t:{ends}:R>',
+            title="🎉 GIVEAWAY 🎉",
+            description=f"**Preis:** {prize}\n\n**Gewinner:** {winners}\n**Endet:** <t:{ends}:R>",
             color=discord.Color.gold(),
-            timestamp=discord.utils.utcnow()
+            timestamp=discord.utils.utcnow(),
         )
-        embed.set_footer(text='Klick den Button um teilzunehmen!')
-        
+        embed.set_footer(text="Klick den Button um teilzunehmen!")
         msg = await ctx.send(embed=embed)
-        
-        # Speichere Giveaway in DB
-        await self.bot.db.execute(
-            'INSERT INTO giveaways (guild_id, channel_id, message_id, ends_at, prize, active) VALUES (?, ?, ?, ?, ?, ?)',
-            (ctx.guild.id, ctx.channel.id, msg.id, ends, prize, 1)
+        cur = await self.bot.db.execute(
+            "INSERT INTO giveaways (guild_id, channel_id, message_id, ends_at, prize, active, winners) "
+            "VALUES (?, ?, ?, ?, ?, 1, ?)",
+            (ctx.guild.id, ctx.channel.id, msg.id, ends, prize, winners),
         )
         await self.bot.db.commit()
-        
-        # Initialisiere Teilnehmer-Liste
-        self.giveaway_participants[msg.id] = set()
-        
-        await ctx.send(f'✅ Giveaway für **{prize}** gestartet! {winners} Gewinner.', delete_after=10)
+        await msg.edit(view=JoinButton(self.bot, cur.lastrowid))
+        await ctx.send(f"✅ Giveaway für **{prize}** gestartet! {winners} Gewinner.", delete_after=10)
+
+    async def _participants(self, message):
+        # Preserve reaction-based participation in existing giveaways.
+        for reaction in message.reactions:
+            if str(reaction.emoji) == "🎉":
+                async for user in reaction.users():
+                    if not user.bot:
+                        await self.bot.db.execute(
+                            "INSERT OR IGNORE INTO giveaway_entries (message_id, user_id) VALUES (?, ?)",
+                            (message.id, user.id),
+                        )
+        await self.bot.db.commit()
+        cur = await self.bot.db.execute("SELECT user_id FROM giveaway_entries WHERE message_id = ?", (message.id,))
+        return [r[0] for r in await cur.fetchall()]
 
     @commands.command()
     @commands.has_permissions(manage_guild=True)
-    async def reroll(self, ctx, message_id: int, *, winners: int = 1):
-        """Rerollt ein beendetes Giveaway."""
-        try:
-            msg = await ctx.channel.fetch_message(message_id)
-        except Exception:
-            await ctx.send('Nachricht nicht gefunden.')
-            return
-        
-        participants = self.giveaway_participants.get(message_id, set())
-        if not participants:
-            await ctx.send('Keine Teilnehmer.')
-            return
-        
-        if winners > len(participants):
-            winners = len(participants)
-        
-        selected_winners = random.sample(list(participants), winners)
-        winner_mentions = ', '.join([f'<@{uid}>' for uid in selected_winners])
-        
-        embed = discord.Embed(
-            title='🎊 Neue Gewinner (Reroll)',
-            description=f'**Gewinner:** {winner_mentions}',
-            color=discord.Color.gold(),
-            timestamp=discord.utils.utcnow()
+    async def reroll(self, ctx, message_id: int, winners: int = 1):
+        if not 1 <= winners <= 100:
+            raise commands.BadArgument("Die Gewinneranzahl muss zwischen 1 und 100 liegen.")
+        cur = await self.bot.db.execute(
+            "SELECT active FROM giveaways WHERE message_id = ? AND guild_id = ? AND channel_id = ?",
+            (message_id, ctx.guild.id, ctx.channel.id),
         )
-        await ctx.send(embed=embed)
+        row = await cur.fetchone()
+        if not row or row[0]:
+            await ctx.send("Kein beendetes Giveaway in diesem Channel gefunden.")
+            return
+        cur = await self.bot.db.execute("SELECT user_id FROM giveaway_entries WHERE message_id = ?", (message_id,))
+        participants = [r[0] for r in await cur.fetchall()]
+        if not participants:
+            # Existing finished giveaways may only have reaction-based participants.
+            try:
+                message = await ctx.channel.fetch_message(message_id)
+                participants = await self._participants(message)
+            except discord.HTTPException:
+                pass
+        if not participants:
+            await ctx.send("Keine Teilnehmer.")
+            return
+        selected = random.sample(participants, min(winners, len(participants)))
+        await ctx.send("🎊 Neue Gewinner: " + ", ".join(f"<@{uid}>" for uid in selected))
 
     @tasks.loop(seconds=15)
     async def check_giveaways(self):
-        """Überprüft beendete Giveaways und zieht Gewinner."""
-        now = int(time.time())
-        cur = await self.bot.db.execute('SELECT id, guild_id, channel_id, message_id, prize FROM giveaways WHERE ends_at <= ? AND active = 1', (now,))
-        rows = await cur.fetchall()
-        
-        for row in rows:
-            gid, guild_id, channel_id, message_id, prize = row[0], row[1], row[2], row[3], row[4]
-            
+        cur = await self.bot.db.execute(
+            "SELECT id, guild_id, channel_id, message_id, prize, winners FROM giveaways "
+            "WHERE ends_at <= ? AND active = 1",
+            (int(time.time()),),
+        )
+        for gid, guild_id, channel_id, message_id, prize, winners in await cur.fetchall():
             guild = self.bot.get_guild(guild_id)
+            channel = guild.get_channel_or_thread(channel_id) if guild else None
             if not guild:
+                await self._finish(gid)
                 continue
-            
-            channel = guild.get_channel(channel_id)
-            if not channel:
-                continue
-            
             try:
+                channel = channel or await guild.fetch_channel(channel_id)
                 msg = await channel.fetch_message(message_id)
-            except Exception:
-                continue
-            
-            # Sammle Teilnehmer von Reactions
-            participants = self.giveaway_participants.get(message_id, set())
-            for react in msg.reactions:
-                if str(react.emoji) == '🎉':
-                    async for u in react.users():
-                        if not u.bot:
-                            participants.add(u.id)
-            
-            # Anzahl der Gewinner
-            winners_count = 1  # default
-            # Extrahiere aus Embed falls vorhanden
-            if msg.embeds:
-                desc = msg.embeds[0].description or ''
-                if 'Gewinner:' in desc:
-                    try:
-                        winners_count = int(desc.split('Gewinner:')[1].split('\n')[0].strip())
-                    except ValueError:
-                        pass
-            
-            if participants:
-                if winners_count > len(participants):
-                    winners_count = len(participants)
-                
-                selected_winners = random.sample(list(participants), winners_count)
-                winner_mentions = ', '.join([f'<@{uid}>' for uid in selected_winners])
-                
+                # Older databases did not store the requested count. Recover it from the existing embed.
+                if winners == 1 and msg.embeds:
+                    match = re.search(r"Gewinner:\*{0,2}\s*(\d+)", msg.embeds[0].description or "")
+                    if match:
+                        winners = max(1, min(100, int(match[1])))
+                participants = await self._participants(msg)
+                selected = random.sample(participants, min(max(1, winners), len(participants)))
+                text = ", ".join(f"<@{uid}>" for uid in selected) if selected else "Leider keine Teilnehmer."
                 embed = discord.Embed(
-                    title='🎊 Giveaway beendet!',
-                    description=f'**Preis:** {prize}\n\n**Gewinner ({winners_count}):** {winner_mentions}',
+                    title="🎊 Giveaway beendet!",
+                    description=f"**Preis:** {prize}\n\n**Gewinner:** {text}",
                     color=discord.Color.gold(),
-                    timestamp=discord.utils.utcnow()
                 )
                 await channel.send(embed=embed)
-            else:
-                embed = discord.Embed(
-                    title='🎊 Giveaway beendet',
-                    description='Leider keine Teilnehmer.',
-                    color=discord.Color.red(),
-                    timestamp=discord.utils.utcnow()
-                )
-                await channel.send(embed=embed)
-            
-            await self.bot.db.execute('UPDATE giveaways SET active = 0 WHERE message_id = ?', (message_id,))
-        
+            except discord.NotFound:
+                await self._finish(gid)
+                continue
+            except discord.HTTPException:
+                continue  # Retry without terminating the background loop.
+            await self._finish(gid)
+            try:
+                await msg.edit(view=None)
+            except discord.HTTPException:
+                pass
+
+    async def _finish(self, gid):
+        await self.bot.db.execute("UPDATE giveaways SET active = 0 WHERE id = ?", (gid,))
         await self.bot.db.commit()
+
+    @check_giveaways.before_loop
+    async def before_giveaways(self):
+        await self.bot.wait_until_ready()
 
 
 async def setup(bot: commands.Bot):
