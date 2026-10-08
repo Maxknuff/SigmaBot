@@ -227,9 +227,14 @@ async def main():
         await bot.start(TOKEN)
 
 
-if __name__ == "__main__":
+def run():
+    """Shared synchronous entry point for local and hosted startup."""
     logging.basicConfig(level=logging.INFO)
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("Bot stopped")
+
+
+if __name__ == "__main__":
+    run()

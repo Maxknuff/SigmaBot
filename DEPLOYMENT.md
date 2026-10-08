@@ -9,6 +9,16 @@ SigmaBot benötigt Python 3.11/3.12 und einen dauerhaft laufenden Prozess mit pe
 3. Intents und Rollenpositionen wie in der [README](README.md) einrichten.
 4. `python bot.py` starten. Ein fehlender oder unveränderter Beispiel-Token führt vor dem Datenbankstart zu einem verständlichen Fehler.
 
+## Bot-Hosting / Pterodactyl
+
+Wenn das Panel `python3 -u ${STARTUP_FILE}` ausführt, kann `STARTUP_FILE` auf `main.py` oder `bot.py` stehen. Beide starten denselben Bot. `main.py` ist ein kompatibler Einstiegspunkt für Panels, die diesen Dateinamen voreinstellen.
+
+Den aktuellen GitHub-Stand vollständig nach `/home/container` übertragen, sodass `main.py`, `bot.py`, `requirements.txt` und `cogs/` direkt dort liegen. Anschließend den Server neu starten. Ein GitHub-Push allein aktualisiert die Hosting-Dateien nur, wenn das Panel dafür einen automatischen Pull eingerichtet hat.
+
+`DISCORD_TOKEN` in der Hosting-Umgebung oder in einer lokalen `.env` setzen. Den Token nicht in die Startzeile eintragen. `python3: can't open file '/home/container/main.py'` bedeutet, dass die Startdatei auf dem Hosting fehlt; Dependency-Installation oder mehr RAM beheben diesen Fehler nicht. Alternativ kann im Panel `STARTUP_FILE=bot.py` gesetzt werden.
+
+Die lokalen Checks werden unter Python 3.12 ausgeführt. Der vorliegende Hosting-Log mit Python 3.14 zeigt einen fehlenden Dateipfad, keinen Python-Kompatibilitätsfehler; ein vollständiger Lauf mit Python 3.14 ist damit noch nicht bestätigt.
+
 ## Docker Compose
 
 Die `.env` bleibt auf dem Host. Compose gibt die Werte an den Container weiter; `.dockerignore` hält Secrets aus dem Image heraus. Die SQLite-Datei inklusive WAL-Dateien liegt im eingebundenen Verzeichnis `./data`.
@@ -67,7 +77,7 @@ git pull --ff-only origin main
 pip install -r requirements.txt
 python -m pytest tests/ -v
 python -m flake8 .
-python -m black --check bot.py cogs tests
+python -m black --check bot.py main.py cogs tests
 python -m pip check
 ```
 
