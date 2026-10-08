@@ -66,12 +66,67 @@ class SigmaBot(commands.Bot):
         self.before_invoke(defer_slash)
         self.db = None
         self.db_lock = asyncio.Lock()
+        self._guild_sync_lock = asyncio.Lock()
+        self._synced_guilds = set()
 
     async def setup_hook(self):
         self.db = await init_db()
         await load_cogs(self)
         synced = await self.tree.sync()
         log.info("Registered %s slash commands", len(synced))
+
+    def installation_url(self):
+        if self.application_id is None:
+            return None
+        return discord.utils.oauth_url(self.application_id, scopes=("bot", "applications.commands"))
+
+    async def sync_guild_commands(self, guild):
+        # Guild commands are immediately available and replace stale guild schemas.
+        # Sync once per server per process, not on every Gateway reconnect.
+        async with self._guild_sync_lock:
+            if guild.id in self._synced_guilds:
+                return
+            self.tree.copy_global_to(guild=guild)
+            try:
+                synced = await self.tree.sync(guild=guild)
+            except discord.Forbidden:
+                log.error(
+                    "Slash registration denied for server %s. Authorize this app with bot and "
+                    "applications.commands: %s",
+                    guild.id,
+                    self.installation_url(),
+                )
+                return
+            except discord.HTTPException as error:
+                log.error(
+                    "Slash registration failed for server %s (HTTP %s, Discord code %s); "
+                    "will retry on the next connection.",
+                    guild.id,
+                    error.status,
+                    error.code,
+                )
+                return
+            self._synced_guilds.add(guild.id)
+            log.info(
+                "Registered %s slash commands directly for server %s: %s",
+                len(synced),
+                guild.id,
+                ", ".join(sorted(command.name for command in synced)),
+            )
+
+    async def sync_connected_guilds(self):
+        log.info("Connected to %s servers. App installation link: %s", len(self.guilds), self.installation_url())
+        if not self.guilds:
+            log.warning("This bot is not connected to any server. Install it using the link above.")
+        for guild in self.guilds:
+            await self.sync_guild_commands(guild)
+
+    async def on_guild_join(self, guild):
+        await self.sync_guild_commands(guild)
+
+    async def on_guild_remove(self, guild):
+        self._synced_guilds.discard(guild.id)
+        self.tree.clear_commands(guild=guild)
 
     async def on_message(self, message):
         # Cog listeners still receive messages; text commands are no longer invoked.
@@ -218,6 +273,7 @@ async def initialize_tables(db):
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
     print("------")
+    await bot.sync_connected_guilds()
 
 
 @bot.event

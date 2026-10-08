@@ -1,7 +1,7 @@
 """Exercise Discord slash registration and hybrid runtime checks without Discord credentials."""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, PropertyMock, patch
 
 import discord
 import pytest
@@ -156,3 +156,79 @@ async def test_failed_slash_sync_aborts_start_and_closes_database(monkeypatch):
             with patch.object(client.tree, "sync", side_effect=RuntimeError("sync failed")):
                 await client.setup_hook()
     assert client.db is None
+
+
+async def test_direct_guild_sync_copies_all_commands_and_only_runs_once(slash_bot):
+    guild = discord.Object(id=123456789012345678)
+    with patch.object(slash_bot.tree, "sync", new_callable=AsyncMock) as sync:
+        sync.return_value = slash_bot.tree.get_commands()
+        await slash_bot.sync_guild_commands(guild)
+        await slash_bot.sync_guild_commands(guild)
+        sync.assert_awaited_once_with(guild=guild)
+    assert {c.name for c in slash_bot.tree.get_commands(guild=guild)} == {c.name for c in slash_bot.tree.get_commands()}
+
+
+async def test_concurrent_ready_events_do_not_duplicate_guild_sync(slash_bot):
+    import asyncio
+
+    guild = discord.Object(id=123456789012345678)
+    with patch.object(slash_bot.tree, "sync", new_callable=AsyncMock) as sync:
+        sync.return_value = slash_bot.tree.get_commands()
+        await asyncio.gather(*(slash_bot.sync_guild_commands(guild) for _ in range(4)))
+        sync.assert_awaited_once_with(guild=guild)
+
+
+async def test_failed_guild_sync_logs_problem_and_can_retry(slash_bot, caplog):
+    guild = discord.Object(id=123456789012345678)
+    response = SimpleNamespace(status=403, reason="Forbidden")
+    with patch.object(slash_bot.tree, "sync", new_callable=AsyncMock) as sync:
+        sync.side_effect = discord.Forbidden(response, {"code": 50001, "message": "Missing Access"})
+        await slash_bot.sync_guild_commands(guild)
+        assert guild.id not in slash_bot._synced_guilds
+        assert "applications.commands" in caplog.text
+        sync.side_effect = None
+        sync.return_value = slash_bot.tree.get_commands()
+        await slash_bot.sync_guild_commands(guild)
+        assert guild.id in slash_bot._synced_guilds
+
+
+async def test_transient_guild_failure_does_not_block_other_servers(slash_bot):
+    first, second = discord.Object(id=123), discord.Object(id=456)
+    response = SimpleNamespace(status=500, reason="Error")
+    with patch.object(type(slash_bot), "guilds", new_callable=PropertyMock) as guilds:
+        guilds.return_value = [first, second]
+        with patch.object(slash_bot.tree, "sync", new_callable=AsyncMock) as sync:
+            sync.side_effect = [discord.HTTPException(response, "temporary"), slash_bot.tree.get_commands()]
+            await slash_bot.sync_connected_guilds()
+    assert first.id not in slash_bot._synced_guilds
+    assert second.id in slash_bot._synced_guilds
+
+
+async def test_join_and_remove_support_rejoining_server(slash_bot):
+    guild = discord.Object(id=123)
+    with patch.object(slash_bot.tree, "sync", new_callable=AsyncMock) as sync:
+        sync.return_value = slash_bot.tree.get_commands()
+        await slash_bot.on_guild_join(guild)
+        await slash_bot.on_guild_remove(guild)
+        assert guild.id not in slash_bot._synced_guilds
+        assert slash_bot.tree.get_commands(guild=guild) == []
+        await slash_bot.on_guild_join(guild)
+        assert sync.await_count == 2
+
+
+def test_installation_link_uses_current_app_and_both_scopes():
+    from urllib.parse import parse_qs, urlparse
+
+    client = core.SigmaBot()
+    client._connection.application_id = 123456789012345678
+    query = parse_qs(urlparse(client.installation_url()).query)
+    assert query["client_id"] == ["123456789012345678"]
+    assert set(query["scope"][0].split()) == {"bot", "applications.commands"}
+
+
+async def test_ready_handler_runs_server_registration():
+    with patch.object(core, "bot") as client:
+        client.user = SimpleNamespace(id=123)
+        client.sync_connected_guilds = AsyncMock()
+        await core.on_ready()
+        client.sync_connected_guilds.assert_awaited_once_with()
