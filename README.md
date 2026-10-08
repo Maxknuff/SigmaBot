@@ -1,6 +1,6 @@
 # SigmaBot
 
-Ein bestehender, modularer Discord-Bot in Python. Alle Befehle sind Discord-Slash-Commands und laufen auf Servern. Nachrichten mit `!` lösen keine Befehle mehr aus. `/help` zeigt die verfügbaren Befehle und Argumente.
+Ein bestehender, modularer Discord-Bot in Python. Alle Befehle sind Discord-Slash-Commands und laufen auf Servern. Nachrichten mit `!` lösen keine Befehle mehr aus. `/help` zeigt Administratoren die verfügbaren Befehle. **Alle Slash-Commands außer `/ticket` erfordern die Discord-Berechtigung Administrator.** `/ticket` bleibt für normale Servermitglieder verfügbar.
 
 ## Starten
 
@@ -78,7 +78,7 @@ Weitere Betriebsanweisungen stehen in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Slash-Commands aktivieren
 
-Nach dem Update den Bot auf dem Hosting neu starten. Beim Start registriert er alle Befehle inklusive `/help` global bei Discord und nach dem Login direkt auf den verbundenen Servern. Nach einem erneuten Gateway-Verbindungsaufbau werden bereits synchronisierte Server nicht nochmals registriert; neu beigetretene Server werden automatisch ergänzt. In einem Server-Channel `/` eingeben und SigmaBot auswählen; die Argumente erscheinen als Eingabefelder. Der Bot muss mit den OAuth2-Scopes `bot` und `applications.commands` installiert sein, und Mitglieder benötigen im Channel die Berechtigung „Anwendungsbefehle verwenden“. Bei fehlenden Befehlen die Installation und die Startlogs prüfen; gegebenenfalls Discord neu laden. Die bisherigen Moderationsrechte bleiben erforderlich.
+Nach dem Update den Bot auf dem Hosting neu starten. Beim Start registriert er alle Befehle inklusive `/help` global bei Discord und nach dem Login direkt auf den verbundenen Servern. Nach einem erneuten Gateway-Verbindungsaufbau werden bereits synchronisierte Server nicht nochmals registriert; neu beigetretene Server werden automatisch ergänzt. In einem Server-Channel `/` eingeben und SigmaBot auswählen; die Argumente erscheinen als Eingabefelder. Der Bot muss mit den OAuth2-Scopes `bot` und `applications.commands` installiert sein, und Mitglieder benötigen im Channel die Berechtigung „Anwendungsbefehle verwenden“. Bei fehlenden Befehlen die Installation und die Startlogs prüfen; gegebenenfalls Discord neu laden. Für alle Slash-Commands außer `/ticket` ist Administrator erforderlich. Die Bot-Berechtigungen für die jeweiligen Aktionen bleiben erforderlich.
 
 `/reactionrole` und `/reroll` erwarten die Nachrichten-ID als Text, damit die langen Discord-IDs ohne Zahlenrundung erhalten bleiben. Nachrichtenauswertung für Moderation, XP und Statistik bleibt aktiv, weshalb Message Content und Server Members Intents weiterhin benötigt werden.
 
@@ -90,3 +90,10 @@ Im Hosting-Log muss nach `Logged in as ...` für deinen Server `Registered 24 sl
 Den Installationslink als Server-Administrator öffnen und denselben Bot mit `bot` und `applications.commands` autorisieren. Den Bot dafür nicht vom Server entfernen. In den Channel-/Rollenberechtigungen muss „Anwendungsbefehle verwenden“ erlaubt sein. Unter Servereinstellungen → Integrationen → der betreffenden App prüfen, ob die Commands für deine Rolle und den Channel freigegeben sind. Danach Discord neu laden und `/help` im Server-Channel auswählen. Das reine Schreiben von `/help` als gewöhnliche Nachricht führt keinen Command aus.
 
 Die globale Meldung `Registered 24 slash commands` bestätigt die API-Registrierung, aber nicht die Sichtbarkeit für eine bestimmte Rolle in einem bestimmten Server. Bei `Slash registration denied` fehlen der Server-App die nötigen Installationsrechte; der im Log angezeigte Link autorisiert genau diese App. HTTP-Fehler bei einer einzelnen Server-Registrierung stoppen den übrigen Bot nicht.
+
+
+### Administrator-Zugriff
+
+Die Anzeige aller Commands außer `/ticket` ist standardmäßig auf Administratoren beschränkt. Zusätzlich prüft der Bot bei jeder Ausführung die echte Serverberechtigung `Administrator`; der Name einer Rolle, einzelne Moderationsrechte oder manuelle Discord-Command-Freigaben umgehen diese Prüfung nicht. Diese Regel gilt auch für `/help`, `/level` und die Organisationsbefehle. `/ticket` benötigt keine Administratorrechte; die Ticket-Erstellung behält den bestehenden Cooldown und die erforderlichen Bot-Rechte.
+
+Nach dem Update den Bot neu starten, damit globale und serverbezogene Command-Berechtigungen neu synchronisiert werden.

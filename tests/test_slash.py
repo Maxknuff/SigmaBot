@@ -71,28 +71,90 @@ async def test_snowflake_options_are_strings_and_member_options_are_discord_user
 
 
 @pytest.mark.parametrize(
-    "name,permission",
+    "name",
     [
-        ("ban", "ban_members"),
-        ("kick", "kick_members"),
-        ("warn", "manage_messages"),
-        ("reactionrole", "manage_roles"),
-        ("close", "manage_channels"),
-        ("giveaway", "manage_guild"),
-        ("checkip", "administrator"),
+        "help",
+        "warn",
+        "warns",
+        "mute",
+        "unmute",
+        "kick",
+        "ban",
+        "unlock",
+        "reactionrole",
+        "remind",
+        "checkip",
+        "scanurl",
+        "serverstats",
+        "ticketinfo",
+        "close",
+        "level",
+        "giveaway",
+        "reroll",
+        "todo_add",
+        "todo_list",
+        "todo_done",
+        "countdown",
+        "away",
     ],
 )
-async def test_slash_permission_checks_remain_enforced(slash_bot, name, permission):
+async def test_all_commands_except_ticket_require_real_administrator(slash_bot, name):
     command = slash_bot.tree.get_command(name)
-    assert getattr(command.default_permissions, permission)
+    assert command.default_permissions == discord.Permissions(administrator=True)
+    # Moderation permissions or a role called Administrator are insufficient.
+    moderator = discord.Permissions.all()
+    moderator.administrator = False
     ctx = SimpleNamespace(
-        guild=SimpleNamespace(id=1), permissions=discord.Permissions.none(), bot_permissions=discord.Permissions.all()
+        guild=SimpleNamespace(id=1),
+        command=slash_bot.get_command(name),
+        author=SimpleNamespace(guild_permissions=moderator),
+        permissions=moderator,
+        bot_permissions=discord.Permissions.all(),
     )
     interaction = SimpleNamespace(client=slash_bot, _baton=ctx)
-    with pytest.raises(commands.MissingPermissions):
+    with pytest.raises(commands.MissingPermissions) as error:
         await command._check_can_run(interaction)
-    setattr(ctx.permissions, permission, True)
+    assert error.value.missing_permissions == ["administrator"]
+    ctx.author.guild_permissions = discord.Permissions.all()
+    ctx.permissions = discord.Permissions.all()
     assert await command._check_can_run(interaction)
+
+
+async def test_ticket_is_available_to_ordinary_members(slash_bot):
+    command = slash_bot.tree.get_command("ticket")
+    assert command.default_permissions is None
+    ctx = SimpleNamespace(
+        guild=SimpleNamespace(id=1),
+        command=slash_bot.get_command("ticket"),
+        author=SimpleNamespace(guild_permissions=discord.Permissions.none()),
+        permissions=discord.Permissions.none(),
+        bot_permissions=discord.Permissions.all(),
+    )
+    assert await command._check_can_run(SimpleNamespace(client=slash_bot, _baton=ctx))
+
+
+async def test_discord_permission_override_cannot_bypass_admin_check(slash_bot):
+    command = slash_bot.tree.get_command("help")
+    command.default_permissions = None
+    ctx = SimpleNamespace(
+        guild=SimpleNamespace(id=1),
+        command=slash_bot.get_command("help"),
+        author=SimpleNamespace(guild_permissions=discord.Permissions.none()),
+        permissions=discord.Permissions.all(),
+        bot_permissions=discord.Permissions.all(),
+    )
+    with pytest.raises(commands.MissingPermissions):
+        await command._check_can_run(SimpleNamespace(client=slash_bot, _baton=ctx))
+
+
+async def test_guild_sync_keeps_admin_policy_and_public_ticket(slash_bot):
+    guild = discord.Object(id=123)
+    with patch.object(slash_bot.tree, "sync", new_callable=AsyncMock) as sync:
+        sync.return_value = slash_bot.tree.get_commands()
+        await slash_bot.sync_guild_commands(guild)
+    for command in slash_bot.tree.get_commands(guild=guild):
+        permissions = command.to_dict(slash_bot.tree)["default_member_permissions"]
+        assert permissions == (None if command.name == "ticket" else 8)
 
 
 async def test_slash_commands_reject_private_messages(slash_bot):

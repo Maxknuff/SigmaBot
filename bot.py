@@ -38,6 +38,21 @@ async def guild_only(ctx):
     return True
 
 
+async def admin_only_except_ticket(ctx):
+    """Runtime enforcement cannot be bypassed by Discord command permission overrides."""
+    if ctx.command is not None and ctx.command.name == "ticket":
+        return True
+    if not ctx.author.guild_permissions.administrator:
+        raise commands.MissingPermissions(["administrator"])
+    return True
+
+
+def apply_command_access_policy(client):
+    for command in client.tree.walk_commands():
+        if isinstance(command, app_commands.Command):
+            command.default_permissions = None if command.name == "ticket" else discord.Permissions(administrator=True)
+
+
 @commands.hybrid_command(name="help", description="Zeigt die verfügbaren Slash-Commands.")
 @app_commands.guild_only()
 async def slash_help(ctx):
@@ -63,6 +78,7 @@ class SigmaBot(commands.Bot):
         )
         self.add_command(slash_help.copy())
         self.add_check(guild_only)
+        self.add_check(admin_only_except_ticket)
         self.before_invoke(defer_slash)
         self.db = None
         self.db_lock = asyncio.Lock()
@@ -300,6 +316,7 @@ async def load_cogs(client=None):
     for fname in EXTENSIONS:
         await client.load_extension(f"cogs.{fname}")
         log.info("Loaded cog: %s", fname)
+    apply_command_access_policy(client)
 
 
 async def main():
