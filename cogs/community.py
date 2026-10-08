@@ -1,5 +1,7 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
+from cogs.utils import snowflake
 
 
 def emoji_key(emoji):
@@ -37,10 +39,18 @@ class Community(commands.Cog):
     async def on_member_remove(self, member: discord.Member):
         await self._announce(member.guild, f"{member.display_name} hat den Server verlassen.")
 
-    @commands.command()
+    @commands.hybrid_command(description="Richtet eine Reaktionsrolle ein.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(manage_roles=True)
     @commands.has_permissions(manage_roles=True)
     @commands.bot_has_permissions(manage_roles=True, add_reactions=True, read_message_history=True)
-    async def reactionrole(self, ctx, message_id: int, emoji: str, role: discord.Role):
+    @app_commands.describe(
+        message_id="Discord-Nachrichten-ID als Text aus dem Entwicklermodus kopieren.",
+        emoji="Emoji, das die Rolle vergibt.",
+        role="Rolle, die vergeben werden soll.",
+    )
+    async def reactionrole(self, ctx, message_id: str, emoji: str, role: discord.Role):
+        message_id = snowflake(message_id)
         if not assignable(role, ctx.guild, ctx.author):
             raise commands.BadArgument("Diese Rolle kann nicht als Reaktionsrolle vergeben werden.")
         msg = await ctx.channel.fetch_message(message_id)

@@ -1,6 +1,7 @@
 import time
 from datetime import timedelta
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
 from cogs.utils import bounded_text, send_chunks
 
@@ -72,9 +73,12 @@ class Moderation(commands.Cog):
             except discord.HTTPException:
                 print("Auto-Mute fehlgeschlagen: Bot-Rechte und Rollen-Hierarchie prüfen.")
 
-    @commands.command()
+    @commands.hybrid_command(description="Verwarnt ein Mitglied.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(manage_messages=True)
     @commands.has_permissions(manage_messages=True)
     @commands.bot_has_permissions(send_messages=True)
+    @app_commands.describe(user="Mitglied, auf das der Befehl angewendet wird.", reason="Grund oder Beschreibung.")
     async def warn(self, ctx, user: discord.Member, *, reason: str = "Keine Angabe"):
         self._validate_target(ctx, user)
         bounded_text(reason, 1000)
@@ -88,9 +92,12 @@ class Moderation(commands.Cog):
         await ctx.send(f"{user.mention} wurde verwarnt: {reason} ({warn_count} total)")
         await self._escalate_user(ctx.guild, user, warn_count)
 
-    @commands.command()
+    @commands.hybrid_command(description="Schaltet ein Mitglied für 28 Tage stumm.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(manage_roles=True)
     @commands.has_permissions(manage_roles=True)
     @commands.bot_has_permissions(moderate_members=True)
+    @app_commands.describe(user="Mitglied, auf das der Befehl angewendet wird.", reason="Grund oder Beschreibung.")
     async def mute(self, ctx, user: discord.Member, *, reason: str = None):
         """Mute a user for up to 28 days using Discord timeout."""
         self._validate_target(ctx, user)
@@ -99,9 +106,12 @@ class Moderation(commands.Cog):
         await user.timeout(timedelta(days=28), reason=reason or "Mute")
         await ctx.send(f"{user.mention} wurde für 28 Tage gemutet.")
 
-    @commands.command()
+    @commands.hybrid_command(description="Hebt die Stummschaltung eines Mitglieds auf.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(manage_roles=True)
     @commands.has_permissions(manage_roles=True)
     @commands.bot_has_permissions(moderate_members=True, manage_roles=True)
+    @app_commands.describe(user="Mitglied, auf das der Befehl angewendet wird.")
     async def unmute(self, ctx, user: discord.Member):
         """Remove timeout and any legacy Muted role."""
         self._validate_target(ctx, user)
@@ -111,8 +121,11 @@ class Moderation(commands.Cog):
             await user.remove_roles(mute_role)
         await ctx.send(f"{user.mention} wurde entmutet.")
 
-    @commands.command()
+    @commands.hybrid_command(description="Zeigt die Verwarnungen eines Mitglieds.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(manage_messages=True)
     @commands.has_permissions(manage_messages=True)
+    @app_commands.describe(user="Mitglied, auf das der Befehl angewendet wird.")
     async def warns(self, ctx, user: discord.Member = None):
         """List warns for a user."""
         user = user or ctx.author
@@ -127,9 +140,12 @@ class Moderation(commands.Cog):
         lines = [f"- {r[0]} (<t:{r[1]}:R>)" for r in rows[:10]]
         await send_chunks(ctx, f"Verwarnungen für {user.mention}:\n" + "\n".join(lines))
 
-    @commands.command()
+    @commands.hybrid_command(description="Entfernt ein Mitglied vom Server.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(kick_members=True)
     @commands.has_permissions(kick_members=True)
     @commands.bot_has_permissions(kick_members=True)
+    @app_commands.describe(user="Mitglied, auf das der Befehl angewendet wird.", reason="Grund oder Beschreibung.")
     async def kick(self, ctx, user: discord.Member, *, reason: str = None):
         self._validate_target(ctx, user)
         try:
@@ -141,9 +157,12 @@ class Moderation(commands.Cog):
         except Exception as e:
             await ctx.send(f"Fehler: {e}")
 
-    @commands.command()
+    @commands.hybrid_command(description="Bannt ein Mitglied vom Server.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(ban_members=True)
     @commands.has_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
+    @app_commands.describe(user="Mitglied, auf das der Befehl angewendet wird.", reason="Grund oder Beschreibung.")
     async def ban(self, ctx, user: discord.Member, *, reason: str = None):
         self._validate_target(ctx, user)
         try:
@@ -191,7 +210,9 @@ class Moderation(commands.Cog):
             except Exception as e:
                 print(f"Raid lockdown failed: {e}")
 
-    @commands.command()
+    @commands.hybrid_command(description="Hebt die gespeicherten Raid-Sperren auf.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
     @commands.has_permissions(administrator=True)
     @commands.bot_has_permissions(manage_channels=True)
     async def unlock(self, ctx):

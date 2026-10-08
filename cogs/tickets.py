@@ -1,10 +1,11 @@
 import time
 import discord
+from discord import app_commands
 from discord.ext import commands
 from cogs.utils import bounded_text
 
 
-async def close_ticket(bot, channel, actor):
+async def close_ticket(bot, channel, actor, notify=None):
     cur = await bot.db.execute(
         "SELECT user_id FROM tickets WHERE guild_id = ? AND channel_id = ? AND status = ?",
         (channel.guild.id, channel.id, "open"),
@@ -14,6 +15,8 @@ async def close_ticket(bot, channel, actor):
         raise commands.BadArgument("Das ist kein offenes Ticket.")
     if actor.id != row[0] and not channel.permissions_for(actor).manage_channels:
         raise commands.MissingPermissions(["manage_channels"])
+    if notify is not None:
+        await notify("Ticket wird geschlossen...", ephemeral=True)
     await channel.delete(reason=f"Ticket geschlossen von {actor.id}")
     await bot.db.execute("UPDATE tickets SET status = ? WHERE channel_id = ?", ("closed", channel.id))
     await bot.db.commit()
@@ -51,9 +54,11 @@ class Tickets(commands.Cog):
         for (channel_id,) in await cur.fetchall():
             self.bot.add_view(CloseButton(self.bot, channel_id))
 
-    @commands.command()
+    @commands.hybrid_command(description="Erstellt ein privates Support-Ticket.")
+    @app_commands.guild_only()
     @commands.bot_has_permissions(manage_channels=True, embed_links=True)
     @commands.cooldown(1, 30, commands.BucketType.member)
+    @app_commands.describe(reason="Grund oder Beschreibung.")
     async def ticket(self, ctx, *, reason: str = "Support benötigt"):
         """Erstellt ein Support-Ticket."""
         bounded_text(reason, 1000)
@@ -90,8 +95,11 @@ class Tickets(commands.Cog):
         await chan.send(embed=embed, view=view)
         await ctx.send(f"✅ Ticket erstellt: {chan.mention}", delete_after=10)
 
-    @commands.command()
+    @commands.hybrid_command(description="Zeigt Informationen zu einem Ticket.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(manage_channels=True)
     @commands.has_permissions(manage_channels=True)
+    @app_commands.describe(channel="Ticket-Channel; ohne Auswahl der aktuelle Channel.")
     async def ticketinfo(self, ctx, channel: discord.TextChannel = None):
         """Zeigt Ticket-Informationen."""
         channel = channel or ctx.channel
@@ -113,12 +121,15 @@ class Tickets(commands.Cog):
         embed.set_footer(text=f"Channel ID: {channel.id}")
         await ctx.send(embed=embed)
 
-    @commands.command()
+    @commands.hybrid_command(description="Schließt ein offenes Support-Ticket.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(manage_channels=True)
     @commands.has_permissions(manage_channels=True)
+    @app_commands.describe(channel="Ticket-Channel; ohne Auswahl der aktuelle Channel.")
     async def close(self, ctx, channel: discord.TextChannel = None):
         """Schließt ein Ticket manuell."""
         channel = channel or ctx.channel
-        await close_ticket(self.bot, channel, ctx.author)
+        await close_ticket(self.bot, channel, ctx.author, notify=ctx.send)
 
 
 async def setup(bot: commands.Bot):

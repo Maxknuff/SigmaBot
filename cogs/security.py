@@ -6,6 +6,7 @@ import re
 import aiohttp
 import urllib.parse
 import discord
+from discord import app_commands
 from discord.ext import commands
 from cogs.utils import send_chunks
 
@@ -161,8 +162,11 @@ class Security(commands.Cog):
         if before.content != after.content:
             await self.on_message(after)
 
-    @commands.command()
+    @commands.hybrid_command(description="Prüft eine IP-Adresse über die konfigurierte API.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
     @commands.has_permissions(administrator=True)
+    @app_commands.describe(ip="IP-Adresse, die geprüft werden soll.")
     async def checkip(self, ctx, ip: str):
         """Manueller IP-Check über konfigurierbare API (falls vorhanden)."""
         api_data = await self._check_ip_with_ipquality(ip)
@@ -172,8 +176,11 @@ class Security(commands.Cog):
         result = {k: api_data[k] for k in ("proxy", "vpn", "tor", "fraud_score") if k in api_data}
         await send_chunks(ctx, "IP-Check Ergebnis: " + json.dumps(result, ensure_ascii=False))
 
-    @commands.command()
+    @commands.hybrid_command(description="Prüft eine URL auf verdächtige Inhalte.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
     @commands.has_permissions(administrator=True)
+    @app_commands.describe(url="HTTP(S)-URL, die geprüft werden soll.")
     async def scanurl(self, ctx, url: str):
         """Manueller URL-Scan (verwendet externe API wenn konfiguriert)."""
         api_data = await self._check_url_with_ipquality(url)

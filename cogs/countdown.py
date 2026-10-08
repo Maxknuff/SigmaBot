@@ -1,4 +1,5 @@
 import time
+from discord import app_commands
 from discord.ext import commands, tasks
 from cogs.utils import bounded_text, deliver, positive_seconds
 
@@ -11,7 +12,9 @@ class Countdown(commands.Cog):
     def cog_unload(self):
         self.loop.cancel()
 
-    @commands.command()
+    @commands.hybrid_command(description="Startet einen Countdown für ein Event.")
+    @app_commands.guild_only()
+    @app_commands.describe(seconds="Dauer in Sekunden, mindestens 1 und maximal 31536000.", title="Titel des Events.")
     async def countdown(self, ctx, seconds: int, *, title: str = "Event"):
         positive_seconds(seconds)
         bounded_text(title, 1000)

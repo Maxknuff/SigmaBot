@@ -1,3 +1,4 @@
+from discord import app_commands
 from discord.ext import commands
 from cogs.utils import bounded_text, send_chunks
 
@@ -6,7 +7,9 @@ class Todo(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.command()
+    @commands.hybrid_command(description="Fügt eine Aufgabe im aktuellen Channel hinzu.")
+    @app_commands.guild_only()
+    @app_commands.describe(text="Text der Erinnerung oder Aufgabe.")
     async def todo_add(self, ctx, *, text: str):
         bounded_text(text, 1000)
         await self.bot.db.execute(
@@ -16,7 +19,8 @@ class Todo(commands.Cog):
         await self.bot.db.commit()
         await ctx.send("Aufgabe hinzugefügt.")
 
-    @commands.command()
+    @commands.hybrid_command(description="Zeigt die Aufgaben im aktuellen Channel.")
+    @app_commands.guild_only()
     async def todo_list(self, ctx):
         cur = await self.bot.db.execute(
             "SELECT id, content, done FROM todos WHERE guild_id = ? AND channel_id = ?", (ctx.guild.id, ctx.channel.id)
@@ -32,7 +36,9 @@ class Todo(commands.Cog):
             out_lines.append(f"{id_}. [{status}] {content}")
         await send_chunks(ctx, "\n".join(out_lines))
 
-    @commands.command()
+    @commands.hybrid_command(description="Markiert eine Aufgabe im aktuellen Channel als erledigt.")
+    @app_commands.guild_only()
+    @app_commands.describe(id="Aufgaben-ID aus /todo_list.")
     async def todo_done(self, ctx, id: int):
         cur = await self.bot.db.execute(
             "UPDATE todos SET done = 1 WHERE id = ? AND guild_id = ? AND channel_id = ?",

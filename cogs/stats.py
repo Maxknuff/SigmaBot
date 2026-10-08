@@ -1,5 +1,6 @@
 import time
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 
@@ -18,7 +19,8 @@ class Stats(commands.Cog):
         )
         await self.bot.db.commit()
 
-    @commands.command()
+    @commands.hybrid_command(description="Zeigt die aufgezeichnete Nachrichtenanzahl.")
+    @app_commands.guild_only()
     async def serverstats(self, ctx: commands.Context):
         cur = await self.bot.db.execute("SELECT COUNT(*) FROM messages WHERE guild_id = ?", (ctx.guild.id,))
         row = await cur.fetchone()

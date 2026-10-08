@@ -41,3 +41,14 @@ async def deliver(bot, guild_id, channel_id, text):
         log.warning("Scheduled message could not be delivered to channel %s", channel_id)
         return False
     return True
+
+
+def snowflake(value):
+    """Discord IDs must be slash strings: integer options cannot hold full snowflakes."""
+    try:
+        text = str(value)
+        if not text.isascii() or not text.isdigit() or not 0 < int(text) < 2**64:
+            raise ValueError
+        return int(text)
+    except (TypeError, ValueError) as exc:
+        raise commands.BadArgument("Bitte gib eine gültige Discord-Nachrichten-ID an.") from exc

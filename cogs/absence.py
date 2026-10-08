@@ -1,5 +1,6 @@
 import time
 import discord
+from discord import app_commands
 from discord.ext import commands
 from cogs.utils import bounded_text, positive_seconds
 
@@ -8,7 +9,11 @@ class Absence(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.command()
+    @commands.hybrid_command(description="Setzt deinen Abwesenheitsstatus.")
+    @app_commands.guild_only()
+    @app_commands.describe(
+        seconds="Dauer in Sekunden, mindestens 1 und maximal 31536000.", reason="Grund oder Beschreibung."
+    )
     async def away(self, ctx, seconds: int, *, reason: str = "Abwesend"):
         positive_seconds(seconds)
         bounded_text(reason, 1000)

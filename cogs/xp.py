@@ -2,6 +2,7 @@ import asyncio
 import random
 import time
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 
@@ -40,7 +41,9 @@ class XP(commands.Cog):
             except discord.HTTPException:
                 pass
 
-    @commands.command()
+    @commands.hybrid_command(description="Zeigt Level und XP eines Mitglieds.")
+    @app_commands.guild_only()
+    @app_commands.describe(member="Mitglied; ohne Auswahl wird dein eigener Stand angezeigt.")
     async def level(self, ctx, member: discord.Member = None):
         member = member or ctx.author
         cur = await self.bot.db.execute(

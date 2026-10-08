@@ -1,4 +1,5 @@
 import time
+from discord import app_commands
 from discord.ext import commands, tasks
 from cogs.utils import bounded_text, deliver, positive_seconds
 
@@ -11,7 +12,11 @@ class Organization(commands.Cog):
     def cog_unload(self):
         self.reminder_loop.cancel()
 
-    @commands.command()
+    @commands.hybrid_command(description="Erinnert dich nach der angegebenen Zeit.")
+    @app_commands.guild_only()
+    @app_commands.describe(
+        seconds="Dauer in Sekunden, mindestens 1 und maximal 31536000.", text="Text der Erinnerung oder Aufgabe."
+    )
     async def remind(self, ctx, seconds: int, *, text: str):
         positive_seconds(seconds)
         bounded_text(text)

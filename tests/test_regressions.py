@@ -65,7 +65,9 @@ async def test_all_extensions_load_and_close_without_login(monkeypatch):
     monkeypatch.setattr(core, "DB_PATH", ":memory:")
     client = core.SigmaBot()
     async with client:
-        await client.setup_hook()
+        with patch.object(client.tree, "sync", new_callable=AsyncMock) as sync:
+            await client.setup_hook()
+            sync.assert_awaited_once()
         await asyncio.sleep(0)
         assert len(client.extensions) == 11
         assert len(client.commands) == 24

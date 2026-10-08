@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 import aiosqlite
 import discord
 from discord.ext import commands
+from discord import app_commands
+from cogs.utils import send_chunks
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -30,19 +32,50 @@ EXTENSIONS = (
 log = logging.getLogger(__name__)
 
 
+async def guild_only(ctx):
+    if ctx.guild is None:
+        raise commands.NoPrivateMessage()
+    return True
+
+
+@commands.hybrid_command(name="help", description="Zeigt die verfügbaren Slash-Commands.")
+@app_commands.guild_only()
+async def slash_help(ctx):
+    lines = [
+        f"/{command.name} — {command.description}"
+        for command in sorted(ctx.bot.tree.get_commands(), key=lambda command: command.name)
+    ]
+    await send_chunks(ctx, "Verfügbare Befehle:\n" + "\n".join(lines))
+
+
+async def defer_slash(ctx):
+    if ctx.interaction is not None and not ctx.interaction.response.is_done():
+        await ctx.defer()
+
+
 class SigmaBot(commands.Bot):
     def __init__(self):
         super().__init__(
-            command_prefix="!",
+            command_prefix=[],
+            help_command=None,
             intents=intents,
             allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True),
         )
+        self.add_command(slash_help.copy())
+        self.add_check(guild_only)
+        self.before_invoke(defer_slash)
         self.db = None
         self.db_lock = asyncio.Lock()
 
     async def setup_hook(self):
         self.db = await init_db()
         await load_cogs(self)
+        synced = await self.tree.sync()
+        log.info("Registered %s slash commands", len(synced))
+
+    async def on_message(self, message):
+        # Cog listeners still receive messages; text commands are no longer invoked.
+        return
 
     async def close(self):
         background = []
@@ -63,13 +96,6 @@ class SigmaBot(commands.Bot):
 
 
 bot = SigmaBot()
-
-
-@bot.check
-async def guild_only(ctx):
-    if ctx.guild is None:
-        raise commands.NoPrivateMessage()
-    return True
 
 
 async def init_db():
@@ -199,18 +225,18 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return
     if isinstance(error, commands.NoPrivateMessage):
-        await ctx.send("Dieser Befehl ist nur auf einem Server verfügbar.")
+        await ctx.send("Dieser Befehl ist nur auf einem Server verfügbar.", ephemeral=True)
     elif isinstance(error, commands.UserInputError):
-        await ctx.send(f"Ungültige Eingabe. Nutze !help {ctx.command}.")
+        await ctx.send(f"Ungültige Eingabe. Prüfe die Optionen von /{ctx.command} oder nutze /help.", ephemeral=True)
     elif isinstance(error, commands.CheckFailure):
-        await ctx.send("Dir oder dem Bot fehlen die benötigten Berechtigungen.")
+        await ctx.send("Dir oder dem Bot fehlen die benötigten Berechtigungen.", ephemeral=True)
     elif isinstance(error, commands.CommandOnCooldown):
-        await ctx.send(f"Bitte warte {error.retry_after:.0f} Sekunden.")
+        await ctx.send(f"Bitte warte {error.retry_after:.0f} Sekunden.", ephemeral=True)
     else:
         # Do not expose API URLs, credentials or internal exceptions to Discord.
         original = getattr(error, "original", error)
         log.error("Command %s failed (%s)", ctx.command, type(original).__name__)
-        await ctx.send("Der Befehl konnte nicht ausgeführt werden. Prüfe die Bot-Berechtigungen.")
+        await ctx.send("Der Befehl konnte nicht ausgeführt werden. Prüfe die Bot-Berechtigungen.", ephemeral=True)
 
 
 async def load_cogs(client=None):

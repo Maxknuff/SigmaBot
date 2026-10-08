@@ -2,8 +2,9 @@ import time
 import random
 import re
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
-from cogs.utils import bounded_text, positive_seconds
+from cogs.utils import snowflake, bounded_text, positive_seconds
 
 
 class JoinButton(discord.ui.View):
@@ -45,9 +46,16 @@ class Giveaway(commands.Cog):
     def cog_unload(self):
         self.check_giveaways.cancel()
 
-    @commands.command()
+    @commands.hybrid_command(description="Startet ein Giveaway mit Teilnahme-Button.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(manage_guild=True)
     @commands.has_permissions(manage_guild=True)
     @commands.bot_has_permissions(embed_links=True, read_message_history=True)
+    @app_commands.describe(
+        seconds="Dauer in Sekunden, mindestens 1 und maximal 31536000.",
+        winners="Anzahl der Gewinner zwischen 1 und 100.",
+        prize="Preis des Giveaways.",
+    )
     async def giveaway(self, ctx, seconds: int, winners: int = 1, *, prize: str = "Preis"):
         positive_seconds(seconds)
         bounded_text(prize, 500)
@@ -85,9 +93,16 @@ class Giveaway(commands.Cog):
         cur = await self.bot.db.execute("SELECT user_id FROM giveaway_entries WHERE message_id = ?", (message.id,))
         return [r[0] for r in await cur.fetchall()]
 
-    @commands.command()
+    @commands.hybrid_command(description="Lost neue Gewinner eines beendeten Giveaways aus.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(manage_guild=True)
     @commands.has_permissions(manage_guild=True)
-    async def reroll(self, ctx, message_id: int, winners: int = 1):
+    @app_commands.describe(
+        message_id="Discord-Nachrichten-ID als Text aus dem Entwicklermodus kopieren.",
+        winners="Anzahl der Gewinner zwischen 1 und 100.",
+    )
+    async def reroll(self, ctx, message_id: str, winners: int = 1):
+        message_id = snowflake(message_id)
         if not 1 <= winners <= 100:
             raise commands.BadArgument("Die Gewinneranzahl muss zwischen 1 und 100 liegen.")
         cur = await self.bot.db.execute(
