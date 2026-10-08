@@ -97,3 +97,10 @@ Die globale Meldung `Registered 24 slash commands` bestätigt die API-Registrier
 Die Anzeige aller Commands außer `/ticket` ist standardmäßig auf Administratoren beschränkt. Zusätzlich prüft der Bot bei jeder Ausführung die echte Serverberechtigung `Administrator`; der Name einer Rolle, einzelne Moderationsrechte oder manuelle Discord-Command-Freigaben umgehen diese Prüfung nicht. Diese Regel gilt auch für `/help`, `/level` und die Organisationsbefehle. `/ticket` benötigt keine Administratorrechte; die Ticket-Erstellung behält den bestehenden Cooldown und die erforderlichen Bot-Rechte.
 
 Nach dem Update den Bot neu starten, damit globale und serverbezogene Command-Berechtigungen neu synchronisiert werden.
+
+
+### Private Command-Rückmeldungen
+
+Antworten auf Slash-Commands sind „Nur für dich“-Nachrichten: Bestätigungen, Fehler, Listen und mehrteilige Antworten sehen nur die Person, die den Befehl ausführt. Auch die anfängliche Warteanzeige ist privat. Eine manuell ausgelöste Verwarnungs-Eskalation erzeugt keine zusätzliche öffentliche Bestätigung.
+
+Der eigentliche Giveaway-Beitrag mit Teilnahme-Button bleibt öffentlich, damit Mitglieder teilnehmen können; die Rückmeldung an den Administrator bleibt privat. Ticket-Inhalte bleiben im privaten Ticket-Channel. Automatische Channel-Ankündigungen wie fällige Erinnerungen, Countdown-Enden und Giveaway-Ergebnisse behalten ihren bisherigen Empfängerkreis.

@@ -36,7 +36,7 @@ class CloseButton(discord.ui.View):
             await interaction.followup.send("Ungültiger Ticket-Channel.", ephemeral=True)
             return
         try:
-            await close_ticket(self.bot, interaction.channel, interaction.user)
+            await close_ticket(self.bot, interaction.channel, interaction.user, notify=interaction.followup.send)
         except (commands.CommandError, discord.HTTPException):
             await interaction.followup.send(
                 "Ticket konnte nicht geschlossen werden. Prüfe die Berechtigungen.", ephemeral=True
@@ -93,7 +93,7 @@ class Tickets(commands.Cog):
         embed.set_footer(text=f"Ticket ID: {chan.id}")
         view = CloseButton(self.bot, chan.id)
         await chan.send(embed=embed, view=view)
-        await ctx.send(f"✅ Ticket erstellt: {chan.mention}", delete_after=10)
+        await ctx.send(f"✅ Ticket erstellt: {chan.mention}")
 
     @commands.hybrid_command(description="Zeigt Informationen zu einem Ticket.")
     @app_commands.guild_only()

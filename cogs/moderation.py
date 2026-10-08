@@ -35,14 +35,14 @@ class Moderation(commands.Cog):
         row = await cur.fetchone()
         return row[0] if row else 0
 
-    async def _escalate_user(self, guild: discord.Guild, member: discord.Member, warn_count: int):
+    async def _escalate_user(self, guild: discord.Guild, member: discord.Member, warn_count: int, announce=True):
         """Auto-escalation: mute -> kick -> ban based on warn count."""
         if member.id == guild.owner_id or member.top_role >= guild.me.top_role:
             return
         if warn_count >= 5:
             try:
                 await member.ban(reason=f"Automatisches Ban nach {warn_count} Verwarnungen")
-                for ch in guild.text_channels:
+                for ch in (guild.text_channels if announce else ()):
                     try:
                         await ch.send(f"{member.mention} wurde automatisch gebannt (5+ Verwarnungen).")
                         break
@@ -53,7 +53,7 @@ class Moderation(commands.Cog):
         elif warn_count == 3:
             try:
                 await member.kick(reason=f"Automatisches Kick nach {warn_count} Verwarnungen")
-                for ch in guild.text_channels:
+                for ch in (guild.text_channels if announce else ()):
                     try:
                         await ch.send(f"{member.mention} wurde automatisch gekickt (3 Verwarnungen).")
                         break
@@ -64,7 +64,7 @@ class Moderation(commands.Cog):
         elif warn_count == 2:
             try:
                 await member.timeout(timedelta(days=28), reason="Auto-Mute nach 2 Verwarnungen")
-                for ch in guild.text_channels:
+                for ch in (guild.text_channels if announce else ()):
                     try:
                         await ch.send(f"{member.mention} wurde automatisch für 28 Tage gemutet.")
                         break
@@ -90,7 +90,7 @@ class Moderation(commands.Cog):
         await self.bot.db.commit()
         warn_count = await self._get_warn_count(ctx.guild.id, user.id)
         await ctx.send(f"{user.mention} wurde verwarnt: {reason} ({warn_count} total)")
-        await self._escalate_user(ctx.guild, user, warn_count)
+        await self._escalate_user(ctx.guild, user, warn_count, announce=False)
 
     @commands.hybrid_command(description="Schaltet ein Mitglied für 28 Tage stumm.")
     @app_commands.guild_only()

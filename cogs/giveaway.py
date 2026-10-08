@@ -69,7 +69,8 @@ class Giveaway(commands.Cog):
             timestamp=discord.utils.utcnow(),
         )
         embed.set_footer(text="Klick den Button um teilzunehmen!")
-        msg = await ctx.send(embed=embed)
+        # The event itself needs a public message so members can participate.
+        msg = await ctx.channel.send(embed=embed)
         cur = await self.bot.db.execute(
             "INSERT INTO giveaways (guild_id, channel_id, message_id, ends_at, prize, active, winners) "
             "VALUES (?, ?, ?, ?, ?, 1, ?)",
@@ -77,7 +78,7 @@ class Giveaway(commands.Cog):
         )
         await self.bot.db.commit()
         await msg.edit(view=JoinButton(self.bot, cur.lastrowid))
-        await ctx.send(f"✅ Giveaway für **{prize}** gestartet! {winners} Gewinner.", delete_after=10)
+        await ctx.send(f"✅ Giveaway für **{prize}** gestartet! {winners} Gewinner.")
 
     async def _participants(self, message):
         # Preserve reaction-based participation in existing giveaways.

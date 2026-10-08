@@ -178,7 +178,7 @@ async def test_slash_commands_defer_before_slow_work(slash_bot):
         interaction=SimpleNamespace(response=SimpleNamespace(is_done=lambda: False)), defer=AsyncMock()
     )
     await slash_bot._before_invoke(ctx)
-    ctx.defer.assert_awaited_once()
+    ctx.defer.assert_awaited_once_with(ephemeral=True)
     ctx.interaction.response.is_done = lambda: True
     await slash_bot._before_invoke(ctx)
     assert ctx.defer.await_count == 1

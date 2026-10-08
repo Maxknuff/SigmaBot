@@ -233,7 +233,7 @@ async def test_giveaway_button_records_once_and_rejects_expired(client):
 async def test_giveaway_start_attaches_button(client):
     ctx = context()
     msg = SimpleNamespace(id=4, edit=AsyncMock())
-    ctx.send.return_value = msg
+    ctx.channel.send = AsyncMock(return_value=msg)
     cog = Giveaway(client)
     await cog.giveaway.callback(cog, ctx, 60, 2, prize="Prize")
     view = msg.edit.await_args.kwargs["view"]
@@ -461,3 +461,13 @@ async def test_xp_never_downgrades_existing_level(client):
     await client.db.execute("INSERT INTO xp (guild_id, user_id, xp, level) VALUES (1, 3, 500, 8)")
     await XP(client).on_message(message())
     assert await (await client.db.execute("SELECT level FROM xp")).fetchone() == (8,)
+
+
+@pytest.mark.parametrize("warn_count", [2, 3, 5])
+async def test_manual_escalation_does_not_send_public_feedback(client, warn_count):
+    channel = SimpleNamespace(send=AsyncMock())
+    guild = SimpleNamespace(owner_id=100, me=SimpleNamespace(top_role=10), text_channels=[channel])
+    member = SimpleNamespace(id=3, top_role=1, mention="<@3>", timeout=AsyncMock(), kick=AsyncMock(), ban=AsyncMock())
+    await Moderation(client)._escalate_user(guild, member, warn_count, announce=False)
+    channel.send.assert_not_awaited()
+    assert member.timeout.await_count + member.kick.await_count + member.ban.await_count == 1

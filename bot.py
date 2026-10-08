@@ -65,7 +65,22 @@ async def slash_help(ctx):
 
 async def defer_slash(ctx):
     if ctx.interaction is not None and not ctx.interaction.response.is_done():
-        await ctx.defer()
+        await ctx.defer(ephemeral=True)
+
+
+class PrivateResponseUnavailable(commands.CommandError):
+    """A private response cannot be sent without a live Discord interaction."""
+
+
+class PrivateCommandContext(commands.Context):
+    """Keep every command response, including followups, visible only to its invoker."""
+
+    async def send(self, content=None, **kwargs):
+        if self.interaction is None or self.interaction.is_expired():
+            # Context.send normally falls back to a PUBLIC channel message after expiry.
+            raise PrivateResponseUnavailable("Die private Interaktion ist nicht mehr verfügbar.")
+        kwargs["ephemeral"] = True
+        return await super().send(content, **kwargs)
 
 
 class SigmaBot(commands.Bot):
@@ -84,6 +99,9 @@ class SigmaBot(commands.Bot):
         self.db_lock = asyncio.Lock()
         self._guild_sync_lock = asyncio.Lock()
         self._synced_guilds = set()
+
+    async def get_context(self, origin, *, cls=PrivateCommandContext):
+        return await super().get_context(origin, cls=cls)
 
     async def setup_hook(self):
         self.db = await init_db()
@@ -294,6 +312,9 @@ async def on_ready():
 
 @bot.event
 async def on_command_error(ctx, error):
+    if isinstance(getattr(error, "original", error), PrivateResponseUnavailable):
+        log.warning("Private command response unavailable; no public fallback was sent.")
+        return
     if isinstance(error, commands.CommandNotFound):
         return
     if isinstance(error, commands.NoPrivateMessage):
